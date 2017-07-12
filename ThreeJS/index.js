@@ -1,3 +1,5 @@
+//配列コピーがヤバイのでは？
+
 var width; //window.innerWidth;
 var height; //window.innerHeight;
 var rad = 3;
@@ -12,7 +14,7 @@ var spherelist = [];
 var save = [];
 var firstUserColor = 0;
 var usercolor = 0;
-var color = 1; //黒が先攻
+var maincolor = 1; //黒が先攻
 var turn;
 var command = document.getElementById("command");
 var now = document.getElementById("now");
@@ -21,8 +23,11 @@ var tmp;
 var aiList = ["randkun", "semimanabukun", "zodiac", "human"];
 var vsAI = 0;
 var step = 4;
+var canput_list = [];
 var skip = 0;
-var luckypoint = [[0, 0], [0, N], [N, 0], [N, N]];
+var luckypoint = [[0, 0], [0, N-1], [N-1, 0], [N-1, N-1]];
+var spin = 10;
+var c = 0.5; //UCB1
 
 //me = AI
 var mefirst = [
@@ -170,15 +175,15 @@ function showtext(){
   var str;
   if(skip != "fin"){
     if(skip == 0){
-      turn = (color == -1) ? "White turn.\n" : "Black turn.\n";
+      turn = (maincolor == -1) ? "White turn.\n" : "Black turn.\n";
     }else{
       if(skip == 1){ //ME->AI(skip)->ME
-        turn = (color == -1) ? vsAI + " turn SKIP! White turn.\n" : vsAI + " turn SKIP! Black turn.\n";
+        turn = (maincolor == -1) ? vsAI + " turn SKIP! White turn.\n" : vsAI + " turn SKIP! Black turn.\n";
       }else{ //AI->ME(skip)->AI->ME
-        turn = (color == -1) ? "White turn SKIPED! White turn.\n" : "Black turn SKIPED! Black turn.\n";
+        turn = (maincolor == -1) ? "White turn SKIPED! White turn.\n" : "Black turn SKIPED! Black turn.\n";
       }
     }
-    str = turn + "おける箇所: " + canput() + " 箇所";
+    str = turn + "おける箇所: " + canput(0) + " 箇所";
   }else{
     var whitepoint = 0;
     var blackpoint = 0;
@@ -309,7 +314,7 @@ function update(){
           }else controls.autoRotate = true;
           if(obj.length > 0){
             if(sphere[obj[0].object.mapx][obj[0].object.mapy].color == 2){
-              play(obj[0].object.mapx, obj[0].object.mapy);
+              play(obj[0].object.mapx, obj[0].object.mapy, 0);
             }
             if(controls.autoRotate){ //加速度保持
               controls.autoRotate = false;
@@ -323,66 +328,76 @@ function update(){
 
 
 
-function river(x, y){
+function river(x, y, sphere_array){
+  var color = maincolor;
   var colorcord = (color == -1) ? 0xFFFFFF : 0x000000 ;
   for(var i = -1; i < 2; i++){for(var j = -1; j < 2; j++){
     if((i != 0 || j != 0) && 0 <= x+i && 0 <= y+j && x+i < N && y+j < N){
       var count = 0;
       var m = x+i;
       var n = y+j;
-      while(sphere[m][n].color == color * -1 && 0 <= m+i && 0 <= n+j && m+i < N && n+j < N){
+      while(((sphere_array == 0 && sphere[m][n].color == color * -1) || (sphere_array != 0 && sphere_array[m][n] == color * -1)) && 0 <= m+i && 0 <= n+j && m+i < N && n+j < N){
         count++;
         m+=i;
         n+=j;
       }
-      if(sphere[m][n].color == color && count > 0){
+      if(sphere_array == 0 && sphere[m][n].color == color && count > 0){
         for(var k = 0; k < count; k++){
           sphere[m+(k+1)*i*-1][n+(k+1)*j*-1].color = color;
           sphere[m+(k+1)*i*-1][n+(k+1)*j*-1].material.color.setHex(colorcord);
         }
+      }else if(sphere_array != 0 && sphere_array[m][n] == color && count > 0){
+        for(var k = 0; k < count; k++) sphere_array[m+(k+1)*i*-1][n+(k+1)*j*-1] = color;
       }
     }
   }}
-  sphere[x][y].color = color;
-  sphere[x][y].material.color.setHex(colorcord);
-  color *= -1;
-  step++;
+  if(sphere_array == 0){
+    sphere[x][y].color = color;
+    sphere[x][y].material.color.setHex(colorcord);
+    maincolor *= -1;
+    step++;
+  }else if(sphere_array != 0){
+    sphere_array[x][y] = color;
+    maincolor *= -1;
+  }
 }
 
 
 
 
-function canput(){
+function canput(sphere_array){
   //候補位置をリセット
+  var color = maincolor;
   for(var i = 0; i < N; i++){for(var j = 0; j < N; j++){
-    if(sphere[i][j].color == 2){
+    if(sphere_array == 0 && sphere[i][j].color == 2){
       sphere[i][j].color = 0;
       sphere[i][j].material.color.setHex(0xFACC2E);
-    }
+    }else if(sphere_array != 0 && sphere_array[i][j] == 2) sphere_array[i][j] = 0;
   }}
   var twoExist = 0;
+  canput_list = [];
   for(var i = 0; i < N; i++){for(var j = 0; j < N; j++){
-    if(sphere[i][j].color == 0){
+    if((sphere_array == 0 && sphere[i][j].color == 0) || (sphere_array != 0 && sphere_array[i][j] == 0)){
       for(var k = -1; k < 2; k++){for(var l = -1; l < 2; l++){
         if((k != 0 || l != 0) && 0 <= i+k && 0 <= j+l && i+k < N && j+l < N){
           var count = 0;
           var m = i+k;
           var n = j+l;
-          while(sphere[m][n].color == color * -1 && 0 <= m+k && 0 <= n+l && m+k < N && n+l < N){
+          while(((sphere_array == 0 && sphere[m][n].color == color * -1) || (sphere_array != 0 && sphere_array[m][n] == color * -1)) && 0 <= m+k && 0 <= n+l && m+k < N && n+l < N){
             count++;
             m+=k;
             n+=l;
           }
-          if(sphere[m][n].color == color && count > 0) sphere[i][j].color = 2;
+          if(sphere_array == 0 && sphere[m][n].color == color && count > 0){
+            sphere[i][j].color = 2;
+            sphere[i][j].material.color.setHex(0xFF0040);
+            canput_list[twoExist++] = [i, j];
+          }else if(sphere_array != 0 && sphere_array[m][n] == color && count > 0){
+            sphere_array[i][j] = 2;
+            canput_list[twoExist++] = [i, j];
+          }
         }
       }}
-    }
-  }}
-  //候補位置カウント
-  for(var i = 0; i < N; i++){for(var j = 0; j < N; j++){
-    if(sphere[i][j].color == 2){
-      sphere[i][j].material.color.setHex(0xFF0040);
-      twoExist++;
     }
   }}
   return twoExist;
@@ -390,16 +405,16 @@ function canput(){
 
 
 
-function play(x, y){
-  river(x, y);
-  if(canput() == 0){
-    color *= -1;
+function play(x, y, sphere_array){
+  river(x, y, sphere_array);
+  if(canput(0) == 0){
+    maincolor *= -1;
     skip++;
-    if(canput() == 0){
+    if(canput(0) == 0){
       skip = "fin";
       showtext();
     }else{
-      if(color != firstUserColor){
+      if(maincolor != firstUserColor){
         skip++;
         showtext();
         skip = 0;
@@ -411,7 +426,7 @@ function play(x, y){
     }
   }else{
     skip = 0;
-    if(firstUserColor != color){
+    if(firstUserColor != maincolor){
       ai();
     }else showtext();
   }
@@ -430,11 +445,11 @@ function randkun(){
 
 
 
-function maxer(){
+function maxer(sphere_array){
   var max;
   var flag = 0;
   for(var i = 0; i < N; i++){for(var j = 0; j < N; j++){
-    if(sphere[i][j].color == 2){
+    if((sphere_array == 0 && sphere[i][j].color == 2) || (sphere_array != 0 && sphere_array[i][j] == 2)){
       if(flag++ == 0 || (firstUserColor == -1 && mefirst[max[0]][max[1]] + youafter[max[0]][max[1]] < mefirst[i][j] + youafter[i][j]) || (firstUserColor == 1 && meafter[max[0]][max[1]] + youfirst[max[0]][max[1]] < meafter[i][j] + youfirst[i][j])) max = [i, j];
     }
   }}
@@ -443,37 +458,145 @@ function maxer(){
 
 
 
-function semimanabukun(epsilon){
-  var epsilonMax = 1.0;
-  if(0 < epsilon && epsilon > Math.random()){
-    return randkun();
-  }else return maxer();
+function listmax(list){
+  var max;
+  var flag = 0;
+  for(var i = 0; i < list.length; i++){
+    if(flag++ == 0 || (maincolor == -1 && mefirst[max[0]][max[1]] + youafter[max[0]][max[1]] < mefirst[list[i][0]][list[i][1]] + youafter[list[i][0]][list[i][1]]) || (maincolor == 1 && meafter[max[0]][max[1]] + youfirst[max[0]][max[1]] < meafter[list[i][0]][list[i][1]] + youfirst[list[i][0]][list[i][1]])) max = list[i];
+  }
+  return max;
 }
 
 
 
-// function epi(){
-//   
-// }
-//
-//
-// function zodiac(){
-//   if(step < 16){
-//     semimanabukun();
-//   }else{
-//     var xy = 0;
-//     for(var i = 0; i < luckypoint.length; i++){
-//       if(sphere[luckypoint[i][0]][luckypoint[i][1]].color == 2){
-//         xy = [[luckypoint[i][0]], [luckypoint[i][1]]];
-//         break;
-//       }
-//     }
-//     if(xy == 0){
-//       
-//     }
-//     return xy;
-//   }
-// }
+function semimanabukun(epsilon, sphere_array){
+  var epsilonMax = 1.0;
+  if(0 < epsilon && epsilon > Math.random()){
+    return randkun();
+  }else return maxer(sphere_array);
+}
+
+
+
+function epi(xy, saveArray, spin){
+  var sum = 0;
+
+  for(var i = 0; i < spin; i++){
+    var savesaveArray = JSON.parse(JSON.stringify(saveArray));
+    var savecolor = JSON.parse(JSON.stringify(maincolor));
+    var win = -3;
+    river(xy[0], xy[1], saveArray);
+    while(win == -3){
+      if(canput(saveArray) == 0){
+        maincolor *= -1;
+        if(canput(saveArray) == 0){
+          var whitepoint = 0;
+          var blackpoint = 0;
+          for(var j = 0; j < N; j++){for(var k = 0; k < N; k++){
+            if(saveArray[j][k] == 1){
+              blackpoint++;
+            }else if(saveArray[j][k] == -1){
+              whitepoint++;
+            }
+          }}
+          if(blackpoint > whitepoint){
+            win = (firstUserColor == -1) ? 1 : -1;
+          }else if(blackpoint < whitepoint){
+            win = (firstUserColor == 1) ? 1 : -1;
+          }else win = 0;
+        }
+      }else{
+        var xypoint = semimanabukun(0.4, saveArray); //UCB1に変えたらもっとよくなるかもしれない
+        river(xypoint[0], xypoint[1], saveArray);
+      }
+    }
+    sum += win;
+
+    saveArray = JSON.parse(JSON.stringify(savesaveArray)); 
+    maincolor = JSON.parse(JSON.stringify(savecolor));
+  }
+
+  return [sum/spin+c*(Math.sqrt(Math.log(spin)/spin)), xy[0], xy[1]];
+}
+
+
+
+function best(saveArray){
+  var canput_list_cp = JSON.parse(JSON.stringify(canput_list));
+  var loop = (canput_list.length < spin) ? canput_list.length : spin;
+  var hope = [];
+
+  for(var i = 0; i < loop; i++){
+    var max = listmax(canput_list_cp);
+    var unluckypoint = 0;
+
+    //max部分を削る
+    for(var j = 0; j < canput_list_cp.length; j++){
+      if(canput_list_cp[j].indexOf(max[0]) > -1 && canput_list_cp[j].indexOf(max[1]) > -1){
+        canput_list_cp = canput_list_cp.slice(0, j).concat(canput_list_cp.slice(j+1, canput_list_cp.length));
+        break;
+      }
+    }
+    for(var j = -1; j < 2 && unluckypoint == 0 ; j++){for(var k = -1; k < 2 && unluckypoint == 0; k++){
+      for(var l = 0; l < luckypoint.length && unluckypoint == 0; l++){
+        if((j != 0 || k != 0) && max[0]+j == luckypoint[l][0] && max[1]+k == luckypoint[l][1]){
+          unluckypoint = 1;
+        }
+      }
+    }}
+
+    var savecolor = JSON.parse(JSON.stringify(maincolor));
+    var savesaveArray = JSON.parse(JSON.stringify(saveArray));
+    //候補位置の選定
+    if(unluckypoint == 0){
+      hope[i] = epi(max, saveArray, Math.floor(loop/2)-Math.floor(i/2));
+    }else hope[i] = [-100, max[0], max[1]];
+    saveArray = JSON.parse(JSON.stringify(savesaveArray));
+    maincolor = JSON.parse(JSON.stringify(savecolor));
+    canput(saveArray);
+  }
+  var hopebest = hope[0];
+  for(var i = 1; i < hope.length; i++){
+    if(hopebest[0] < hope[i][0]) hopebest = hope[i];
+  }
+
+  return [hopebest[1], hopebest[2]];
+}
+
+
+
+function zodiac(){
+  var xy = 0;
+
+  //九局面までsemimanabukun
+  if(step < 10){
+    xy = semimanabukun(0.1, 0);
+  }
+
+  //十局面以降
+  else{
+    //角に置けるなら置く
+    for(var i = 0; i < luckypoint.length; i++){
+      if(sphere[luckypoint[i][0]][luckypoint[i][1]].color == 2){
+        xy = [luckypoint[i][0], luckypoint[i][1]];
+        break;
+      }
+    }
+
+    //モンテカルロ木
+    if(xy == 0){
+      var saveArray = [];
+      for(var i = 0; i < N; i++){
+        saveArray[i] = [];
+        for(var j = 0; j < N; j++) saveArray[i][j] = sphere[i][j].color;
+      }
+      var savecolor = JSON.parse(JSON.stringify(maincolor));
+      xy = best(saveArray);
+      maincolor = JSON.parse(JSON.stringify(savecolor));
+    }
+  }
+  return xy;
+}
 
 
 
@@ -482,11 +605,13 @@ function ai(){
   if(vsAI == "randkun"){
     xy = randkun();
   }else if(vsAI == "semimanabukun"){
-    xy = semimanabukun(0.1);
+    xy = semimanabukun(0.1, 0);
+  }else if(vsAI == "zodiac"){
+    xy = zodiac();
   }
   if(vsAI == "human"){
     showtext();
-  }else play(xy[0], xy[1]);
+  }else play(xy[0], xy[1], 0);
 }
 
 
